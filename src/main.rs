@@ -8,8 +8,10 @@ mod model;
 pub mod token;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use anyhow::Context;
 use clap::Parser;
 use kiro::endpoint::{IdeEndpoint, KiroEndpoint};
 use kiro::model::credentials::{CredentialsConfig, KiroCredentials};
@@ -35,19 +37,24 @@ async fn main() {
     let config_path = args
         .config
         .unwrap_or_else(|| Config::default_config_path().to_string());
-    let config = Config::load(&config_path).unwrap_or_else(|e| {
+    let mut config = Config::load(&config_path).unwrap_or_else(|e| {
         tracing::error!("加载配置失败: {}", e);
         std::process::exit(1);
     });
+    if let Err(e) = config.apply_env_overrides() {
+        tracing::error!("应用环境变量配置失败: {}", e);
+        std::process::exit(1);
+    }
 
     // 加载凭证（支持单对象或数组格式）
     let credentials_path = args
         .credentials
         .unwrap_or_else(|| KiroCredentials::default_credentials_path().to_string());
-    let credentials_config = CredentialsConfig::load(&credentials_path).unwrap_or_else(|e| {
-        tracing::error!("加载凭证失败: {}", e);
-        std::process::exit(1);
-    });
+    let (credentials_config, mut credentials_persist_path) =
+        load_credentials_config(&credentials_path).unwrap_or_else(|e| {
+            tracing::error!("加载凭证失败: {}", e);
+            std::process::exit(1);
+        });
 
     // 判断是否为多凭据格式（用于刷新后回写）
     let is_multiple_format = credentials_config.is_multiple();
@@ -68,6 +75,7 @@ async fn main() {
                 ..Default::default()
             };
             credentials_list.insert(0, api_key_cred);
+            credentials_persist_path = None;
         }
     }
 
@@ -111,10 +119,7 @@ async fn main() {
 
     // 校验所有凭据声明的端点都已注册
     for cred in &credentials_list {
-        let name = cred
-            .endpoint
-            .as_deref()
-            .unwrap_or(&config.default_endpoint);
+        let name = cred.endpoint.as_deref().unwrap_or(&config.default_endpoint);
         if !endpoints.contains_key(name) {
             tracing::error!(
                 "凭据 id={:?} 指定了未知端点 \"{}\"（已注册: {:?}）",
@@ -133,7 +138,7 @@ async fn main() {
         config.clone(),
         credentials_list,
         proxy_config.clone(),
-        Some(credentials_path.into()),
+        credentials_persist_path,
         is_multiple_format,
     )
     .unwrap_or_else(|e| {
@@ -216,4 +221,30 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+fn load_credentials_config(
+    credentials_path: &str,
+) -> anyhow::Result<(CredentialsConfig, Option<PathBuf>)> {
+    if let Some((name, value)) = env_value(&["KIRO_CREDENTIALS_JSON", "CREDENTIALS_JSON"]) {
+        let config = serde_json::from_str(&value)
+            .with_context(|| format!("解析环境变量 {name} 中的凭据 JSON 失败"))?;
+        tracing::info!("检测到 {} 环境变量，使用环境变量中的凭据配置", name);
+        return Ok((config, None));
+    }
+
+    let config = CredentialsConfig::load(credentials_path)?;
+    Ok((config, Some(PathBuf::from(credentials_path))))
+}
+
+fn env_value<'a>(names: &'a [&'a str]) -> Option<(&'a str, String)> {
+    for name in names {
+        if let Ok(value) = std::env::var(name) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some((*name, value.to_string()));
+            }
+        }
+    }
+    None
 }

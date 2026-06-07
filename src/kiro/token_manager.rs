@@ -659,10 +659,10 @@ impl MultiTokenManager {
 
         // 如果有新分配的 ID 或新生成的 machineId，立即持久化到配置文件
         if has_new_ids || has_new_machine_ids {
-            if let Err(e) = manager.persist_credentials() {
-                tracing::warn!("补全凭据 ID/machineId 后持久化失败: {}", e);
-            } else {
-                tracing::info!("已补全凭据 ID/machineId 并写回配置文件");
+            match manager.persist_credentials() {
+                Ok(true) => tracing::info!("已补全凭据 ID/machineId 并写回配置文件"),
+                Ok(false) => tracing::debug!("凭据未配置持久化路径，跳过写回 ID/machineId"),
+                Err(e) => tracing::warn!("补全凭据 ID/machineId 后持久化失败: {}", e),
             }
         }
 

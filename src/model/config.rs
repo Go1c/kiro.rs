@@ -223,6 +223,103 @@ impl Config {
         Ok(config)
     }
 
+    /// 用环境变量覆盖配置文件中的值。
+    ///
+    /// 这主要用于 Zeabur 等 PaaS 平台：配置文件仍然可用，但关键运行时配置
+    /// 可以直接从环境变量注入，避免必须挂载 `/app/config/config.json`。
+    pub fn apply_env_overrides(&mut self) -> anyhow::Result<()> {
+        if let Some((_, value)) = env_value(&["KIRO_RS_HOST", "BIND_HOST", "HOST"]) {
+            self.host = value;
+        }
+
+        if let Some((name, value)) = env_value(&["KIRO_RS_PORT", "PORT"]) {
+            self.port = value
+                .parse::<u16>()
+                .with_context(|| format!("环境变量 {name} 不是有效端口: {value}"))?;
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_REGION", "REGION"]) {
+            self.region = value;
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_AUTH_REGION", "AUTH_REGION"]) {
+            self.auth_region = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_API_REGION", "API_REGION"]) {
+            self.api_region = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_KIRO_VERSION", "KIRO_VERSION"]) {
+            self.kiro_version = value;
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_MACHINE_ID", "MACHINE_ID"]) {
+            self.machine_id = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_API_KEY", "API_KEY"]) {
+            self.api_key = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_SYSTEM_VERSION", "SYSTEM_VERSION"]) {
+            self.system_version = value;
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_NODE_VERSION", "NODE_VERSION"]) {
+            self.node_version = value;
+        }
+
+        if let Some((name, value)) = env_value(&["KIRO_RS_TLS_BACKEND", "TLS_BACKEND"]) {
+            self.tls_backend = parse_tls_backend(&value)
+                .with_context(|| format!("环境变量 {name} 不是有效 TLS 后端: {value}"))?;
+        }
+
+        if let Some((_, value)) = env_value(&["COUNT_TOKENS_API_URL"]) {
+            self.count_tokens_api_url = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["COUNT_TOKENS_API_KEY"]) {
+            self.count_tokens_api_key = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["COUNT_TOKENS_AUTH_TYPE"]) {
+            self.count_tokens_auth_type = value;
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_PROXY_URL", "PROXY_URL"]) {
+            self.proxy_url = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_PROXY_USERNAME", "PROXY_USERNAME"]) {
+            self.proxy_username = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_PROXY_PASSWORD", "PROXY_PASSWORD"]) {
+            self.proxy_password = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_ADMIN_API_KEY", "ADMIN_API_KEY"]) {
+            self.admin_api_key = Some(value);
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_LOAD_BALANCING_MODE", "LOAD_BALANCING_MODE"])
+        {
+            self.load_balancing_mode = value;
+        }
+
+        if let Some((name, value)) = env_value(&["KIRO_RS_EXTRACT_THINKING", "EXTRACT_THINKING"]) {
+            self.extract_thinking = parse_bool(&value)
+                .with_context(|| format!("环境变量 {name} 不是有效布尔值: {value}"))?;
+        }
+
+        if let Some((_, value)) = env_value(&["KIRO_RS_DEFAULT_ENDPOINT", "DEFAULT_ENDPOINT"]) {
+            self.default_endpoint = value;
+        }
+
+        Ok(())
+    }
+
     /// 获取配置文件路径（如果有）
     pub fn config_path(&self) -> Option<&Path> {
         self.config_path.as_deref()
@@ -236,7 +333,36 @@ impl Config {
             .ok_or_else(|| anyhow::anyhow!("配置文件路径未知，无法保存配置"))?;
 
         let content = serde_json::to_string_pretty(self).context("序列化配置失败")?;
-        fs::write(path, content).with_context(|| format!("写入配置文件失败: {}", path.display()))?;
+        fs::write(path, content)
+            .with_context(|| format!("写入配置文件失败: {}", path.display()))?;
         Ok(())
+    }
+}
+
+fn env_value<'a>(names: &'a [&'a str]) -> Option<(&'a str, String)> {
+    for name in names {
+        if let Ok(value) = std::env::var(name) {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some((*name, value.to_string()));
+            }
+        }
+    }
+    None
+}
+
+fn parse_tls_backend(value: &str) -> anyhow::Result<TlsBackend> {
+    match value.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "rustls" => Ok(TlsBackend::Rustls),
+        "native-tls" => Ok(TlsBackend::NativeTls),
+        _ => anyhow::bail!("支持的值为 rustls 或 native-tls"),
+    }
+}
+
+fn parse_bool(value: &str) -> anyhow::Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => anyhow::bail!("支持的值为 true/false, 1/0, yes/no 或 on/off"),
     }
 }

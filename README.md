@@ -364,7 +364,37 @@ docker-compose up
 
 ### 环境变量
 
-可通过环境变量配置日志级别：
+可通过环境变量覆盖配置文件中的关键字段，适合 Zeabur 等 PaaS 平台：
+
+| 环境变量 | 对应配置 | 说明 |
+|----------|----------|------|
+| `API_KEY` / `KIRO_RS_API_KEY` | `apiKey` | 客户端访问本服务使用的 API Key，必配 |
+| `KIRO_API_KEY` | `credentials[].kiroApiKey` | 上游 Kiro API Key 凭据，使用 API Key 登录时填写 |
+| `KIRO_CREDENTIALS_JSON` / `CREDENTIALS_JSON` | `credentials.json` | 完整凭据 JSON，支持单对象或数组格式 |
+| `ADMIN_API_KEY` / `KIRO_RS_ADMIN_API_KEY` | `adminApiKey` | Admin API / Web 管理面板密钥，可选 |
+| `PORT` / `KIRO_RS_PORT` | `port` | 监听端口 |
+| `HOST` / `KIRO_RS_HOST` | `host` | 监听地址，容器部署建议 `0.0.0.0` |
+| `REGION` / `KIRO_RS_REGION` | `region` | 默认 Region |
+| `AUTH_REGION` / `KIRO_RS_AUTH_REGION` | `authRegion` | Auth Region |
+| `API_REGION` / `KIRO_RS_API_REGION` | `apiRegion` | API Region |
+| `TLS_BACKEND` / `KIRO_RS_TLS_BACKEND` | `tlsBackend` | `rustls` 或 `native-tls` |
+| `PROXY_URL` / `KIRO_RS_PROXY_URL` | `proxyUrl` | HTTP/SOCKS5 代理地址 |
+
+Zeabur 最小配置示例：
+
+```bash
+API_KEY=sk-your-client-api-key
+KIRO_API_KEY=ksk_your_kiro_api_key
+```
+
+如果使用 OAuth 凭据，可改用：
+
+```bash
+API_KEY=sk-your-client-api-key
+KIRO_CREDENTIALS_JSON={"refreshToken":"...","expiresAt":"2026-12-31T00:00:00Z","authMethod":"social"}
+```
+
+也可通过环境变量配置日志级别：
 
 ```bash
 RUST_LOG=debug ./target/release/kiro-rs

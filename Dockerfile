@@ -25,6 +25,9 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/target/release/kiro-rs /app/kiro-rs
 
+ENV HOST=0.0.0.0
+ENV PORT=8990
+
 VOLUME ["/app/config"]
 
 EXPOSE 8990
